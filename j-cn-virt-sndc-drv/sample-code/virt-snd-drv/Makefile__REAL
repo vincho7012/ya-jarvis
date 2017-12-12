@@ -1,0 +1,9 @@
+#
+# Makefile for Virtual Sound Driver
+# Copyright (c) 2017 by Valeri Ivanov
+#
+
+snd-virt-snd-objs := virt-snd-drv.o
+
+# Toplevel Module Dependency
+obj-$(CONFIG_SND_VIRT_SND_DRV) += snd-virt-snd.o
