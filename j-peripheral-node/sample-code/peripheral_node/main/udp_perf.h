@@ -16,6 +16,8 @@
 extern "C" {
 #endif
 
+#include "driver/i2c.h"
+#include "bme280.h"
 
 /*test options*/
 #define EXAMPLE_ESP_WIFI_MODE_AP CONFIG_UDP_PERF_WIFI_MODE_AP //TRUE:AP FALSE:STA
@@ -40,6 +42,22 @@ extern "C" {
 #define I2S_NUM         (0)
 #define SAMPLE_RATE     (36000)
 
+#define I2C_EXAMPLE_MASTER_TX_BUF_DISABLE  0                /*!< I2C master do not need buffer */
+#define I2C_EXAMPLE_MASTER_RX_BUF_DISABLE  0                /*!< I2C master do not need buffer */
+#define I2C_EXAMPLE_MASTER_NUM             I2C_NUM_1        /*!< I2C port number for master dev */
+#define I2C_EXAMPLE_MASTER_SCL_IO          19               /*!< gpio number for I2C master clock */
+#define I2C_EXAMPLE_MASTER_SDA_IO          18               /*!< gpio number for I2C master data  */
+#define I2C_EXAMPLE_MASTER_FREQ_HZ         100000           /*!< I2C master clock frequency */
+
+#define BH280_SENSOR_ADDR                  0x77             /*!< slave address for BH1750 sensor */
+#define BH280_CMD_START                    0xFA             /*!< Command to set measure mode */
+#define WRITE_BIT                          I2C_MASTER_WRITE /*!< I2C master write */
+#define READ_BIT                           I2C_MASTER_READ  /*!< I2C master read */
+#define ACK_CHECK_EN                       0x1              /*!< I2C master will check ack from slave*/
+#define ACK_CHECK_DIS                      0x0              /*!< I2C master will not check ack from slave */
+#define ACK_VAL                            0x0              /*!< I2C ack value */
+#define NACK_VAL                           0x1              /*!< I2C nack value */
+
 #define TAG "udp_perf:"
 
 /* FreeRTOS event group to signal when we are connected to WiFi and ready to start UDP test*/
@@ -53,22 +71,19 @@ extern int success_pack;
 
 //using esp as station
 void wifi_init_sta();
-//using esp as softap
-void wifi_init_softap();
 
-//create a udp server socket. return ESP_OK:success ESP_FAIL:error
-esp_err_t create_udp_server();
+
 //create a udp client socket. return ESP_OK:success ESP_FAIL:error
 esp_err_t create_udp_client();
-
-//send or recv data task
-void send_recv_data(void *pvParameters);
 
 //send data task
 void send_data(void *pvParameters);
 
 //recv data task
 void recv_data(void *pvParameters);
+
+//task for publishing sensor data
+void mqtt_publish_sensor_data(void *pvParameters);
 
 //get socket error code. return: error code
 int get_socket_error_code(int socket);
@@ -79,12 +94,21 @@ int show_socket_error_reason(int socket);
 //check connected socket. return: error code
 int check_connected_socket();
 
-//close all socket
+//close all sockets
 void close_socket();
 
 //configure i2s
 void configure_i2s();
 
+void i2c_example_master_init();
+
+s8 BME280_I2C_bus_read(u8 dev_addr, u8 reg_addr, u8 *reg_data, u8 cnt);
+
+s8 BME280_I2C_bus_write(u8 dev_addr, u8 reg_addr, u8 *reg_data, u8 cnt);
+
+void BME280_delay_msek(u32 msek);
+
+esp_err_t i2c_master_sensor_config(i2c_port_t i2c_num);
 
 #ifdef __cplusplus
 }

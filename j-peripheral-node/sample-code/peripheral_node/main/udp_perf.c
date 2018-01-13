@@ -16,14 +16,26 @@
 #include "esp_event_loop.h"
 #include "esp_log.h"
 #include "driver/i2s.h"
+#include "driver/i2c.h"
 
 
 #include "udp_perf.h"
+#include "mqtt.h"
+#include "bme280.h"
+
+
+
+struct bme280_t bme280 = {
+	.bus_write = BME280_I2C_bus_write,
+	.bus_read = BME280_I2C_bus_read,
+	.dev_addr = BME280_I2C_ADDRESS2,
+	.delay_msec = BME280_delay_msek
+};
 
 
 /* FreeRTOS event group to signal when we are connected to WiFi and ready to start UDP test*/
 EventGroupHandle_t udp_event_group;
-
+const char *MQTT_TAG = "MQTT_SAMPLE";
 
 static int mysocket,mysocket1;
 
@@ -52,18 +64,6 @@ static esp_err_t event_handler(void *ctx, system_event_t *event)
 		ip4addr_ntoa(&event->event_info.got_ip.ip_info.ip));
     	xEventGroupSetBits(udp_event_group, WIFI_CONNECTED_BIT);
         break;
-    case SYSTEM_EVENT_AP_STACONNECTED:
-    	ESP_LOGI(TAG, "station:"MACSTR" join,AID=%d\n",
-		MAC2STR(event->event_info.sta_connected.mac),
-		event->event_info.sta_connected.aid);
-    	xEventGroupSetBits(udp_event_group, WIFI_CONNECTED_BIT);
-    	break;
-    case SYSTEM_EVENT_AP_STADISCONNECTED:
-    	ESP_LOGI(TAG, "station:"MACSTR"leave,AID=%d\n",
-		MAC2STR(event->event_info.sta_disconnected.mac),
-		event->event_info.sta_disconnected.aid);
-    	xEventGroupClearBits(udp_event_group, WIFI_CONNECTED_BIT);
-    	break;
     default:
         break;
     }
@@ -96,58 +96,6 @@ void wifi_init_sta()
     ESP_LOGI(TAG, "connect to ap SSID:%s password:%s \n",
 	    EXAMPLE_DEFAULT_SSID,EXAMPLE_DEFAULT_PWD);
 }
-//wifi_init_softap
-void wifi_init_softap()
-{
-    udp_event_group = xEventGroupCreate();
-    
-    tcpip_adapter_init();
-    ESP_ERROR_CHECK(esp_event_loop_init(event_handler, NULL));
-
-    wifi_init_config_t cfg = WIFI_INIT_CONFIG_DEFAULT();
-    ESP_ERROR_CHECK(esp_wifi_init(&cfg));
-    wifi_config_t wifi_config = {
-        .ap = {
-            .ssid = EXAMPLE_DEFAULT_SSID,
-            .ssid_len=0,
-            .max_connection=EXAMPLE_MAX_STA_CONN,
-            .password = EXAMPLE_DEFAULT_PWD,
-            .authmode=WIFI_AUTH_WPA_WPA2_PSK
-        },
-    };
-    if (strlen(EXAMPLE_DEFAULT_PWD) ==0) {
-	wifi_config.ap.authmode = WIFI_AUTH_OPEN;
-    }
-
-    ESP_ERROR_CHECK(esp_wifi_set_mode(WIFI_MODE_AP));
-    ESP_ERROR_CHECK(esp_wifi_set_config(ESP_IF_WIFI_AP, &wifi_config));
-    ESP_ERROR_CHECK(esp_wifi_start());
-
-    ESP_LOGI(TAG, "wifi_init_softap finished.SSID:%s password:%s \n",
-    	    EXAMPLE_DEFAULT_SSID, EXAMPLE_DEFAULT_PWD);
-}
-
-//create a udp server socket. return ESP_OK:success ESP_FAIL:error
-esp_err_t create_udp_server()
-{
-    ESP_LOGI(TAG, "create_udp_server() port:%d", EXAMPLE_DEFAULT_SEND_PORT);
-    mysocket = socket(AF_INET, SOCK_DGRAM, 0);
-    if (mysocket < 0) {
-    	show_socket_error_reason(mysocket);
-	return ESP_FAIL;
-    }
-    struct sockaddr_in server_addr;
-    server_addr.sin_family = AF_INET;
-    server_addr.sin_port = htons(EXAMPLE_DEFAULT_SEND_PORT);
-    server_addr.sin_addr.s_addr = htonl(INADDR_ANY);
-    if (bind(mysocket, (struct sockaddr *)&server_addr, sizeof(server_addr)) < 0) {
-    	show_socket_error_reason(mysocket);
-	close(mysocket);
-	return ESP_FAIL;
-    }
-    return ESP_OK;
-}
-
 //create a udp client socket. return ESP_OK:success ESP_FAIL:error
 esp_err_t create_udp_client()
 {
@@ -189,20 +137,16 @@ esp_err_t create_udp_client()
 void send_data(void *pvParameters)
 {
     ESP_LOGI(TAG, "task send_data start!\n");
-    
     int len;
     char databuff[EXAMPLE_DEFAULT_PKTSIZE];
     
     /*send&receive first packet*/
     socklen = sizeof(remote_addr);
     memset(databuff, EXAMPLE_PACK_BYTE_IS, EXAMPLE_DEFAULT_PKTSIZE);
-//#if EXAMPLE_ESP_UDP_MODE_SERVER
- //   ESP_LOGI(TAG, "first recvfrom:");
- //   len = recvfrom(mysocket, databuff, EXAMPLE_DEFAULT_PKTSIZE, 0, (struct sockaddr *)&remote_addr, &socklen);
-//#else
+
     ESP_LOGI(TAG, "first sendto:");
     len = sendto(mysocket, databuff, EXAMPLE_DEFAULT_PKTSIZE, 0, (struct sockaddr *)&remote_addr, sizeof(remote_addr));
-//#endif
+
 
     if (len > 0) {
 	ESP_LOGI(TAG, "transfer data with %s:%u\n",
@@ -214,17 +158,17 @@ void send_data(void *pvParameters)
 	vTaskDelete(NULL);
     } /*if (len > 0)*/
     
-#if EXAMPLE_ESP_UDP_PERF_TX
     vTaskDelay(500 / portTICK_RATE_MS);
-#endif
-    ESP_LOGI(TAG, "start count!\n");
+    i2c_master_sensor_config(I2C_EXAMPLE_MASTER_NUM);
+    ESP_LOGI(TAG, "start count1!\n");
     while(1) {
-//#if EXAMPLE_ESP_UDP_PERF_TX
+
 	len = sendto(mysocket, databuff, EXAMPLE_DEFAULT_PKTSIZE, 0, (struct sockaddr *)&remote_addr, sizeof(remote_addr));
-//#else
-//	len = recvfrom(mysocket, databuff, EXAMPLE_DEFAULT_PKTSIZE, 0, (struct sockaddr *)&remote_addr, &socklen);
-//#endif
+
 	vTaskDelay(5000 / portTICK_RATE_MS);//every 5s
+
+	//i2c_master_read_sensor( I2C_EXAMPLE_MASTER_NUM, sensor_regdata);
+
 	if (len > 0) {
 	    total_data += len;
 	    success_pack++;
@@ -270,7 +214,26 @@ void recv_data(void *pvParameters)
 	} /*if (len > 0)*/
     } /*while(1)*/
 }
+void mqtt_publish_sensor_data(void *pvParameters)
+{
+	i2c_master_sensor_config(I2C_EXAMPLE_MASTER_NUM);
+	bme280_init(&bme280);
+	s32 v_uncomp_pressure_s32;
+	s32 v_uncomp_temperature_s32;
+	s32 v_uncomp_humidity_s32;
+	vTaskDelay(100 / portTICK_RATE_MS);
+	while(1) {
+		bme280_read_uncomp_pressure_temperature_humidity(
+						&v_uncomp_pressure_s32, &v_uncomp_temperature_s32, &v_uncomp_humidity_s32);
 
+		ESP_LOGI(TAG,"%.2f degC / %.3f hPa / %.3f %%",
+			bme280_compensate_temperature_double(v_uncomp_temperature_s32),
+			bme280_compensate_pressure_double(v_uncomp_pressure_s32)/100, // Pa -> hPa
+			bme280_compensate_humidity_double(v_uncomp_humidity_s32));
+
+		vTaskDelay(5000 / portTICK_RATE_MS);//every 5s
+	}
+}
 
 int get_socket_error_code(int socket)
 {
@@ -329,3 +292,180 @@ void configure_i2s()
     i2s_driver_install(I2S_NUM, &i2s_config, 0, NULL);
     i2s_set_pin(I2S_NUM, &pin_config);
 }
+
+void i2c_example_master_init()
+{
+    int i2c_master_port = I2C_EXAMPLE_MASTER_NUM;
+    i2c_config_t conf;
+    conf.mode = I2C_MODE_MASTER;
+    conf.sda_io_num = I2C_EXAMPLE_MASTER_SDA_IO;
+    conf.sda_pullup_en = GPIO_PULLUP_ENABLE;
+    conf.scl_io_num = I2C_EXAMPLE_MASTER_SCL_IO;
+    conf.scl_pullup_en = GPIO_PULLUP_ENABLE;
+    conf.master.clk_speed = I2C_EXAMPLE_MASTER_FREQ_HZ;
+    i2c_param_config(i2c_master_port, &conf);
+    i2c_driver_install(i2c_master_port, conf.mode,
+                       I2C_EXAMPLE_MASTER_RX_BUF_DISABLE,
+                       I2C_EXAMPLE_MASTER_TX_BUF_DISABLE, 0);
+}
+
+esp_err_t i2c_master_sensor_config(i2c_port_t i2c_num)
+{
+    int ret;
+    i2c_cmd_handle_t cmd = i2c_cmd_link_create();
+    i2c_master_start(cmd);
+    i2c_master_write_byte(cmd, BH280_SENSOR_ADDR << 1 | WRITE_BIT, ACK_CHECK_EN);
+    i2c_master_write_byte(cmd, 0xF4, ACK_CHECK_EN);
+    i2c_master_write_byte(cmd, 0xB7, ACK_CHECK_EN);
+    i2c_master_stop(cmd);
+    ret = i2c_master_cmd_begin(i2c_num, cmd, 1000 / portTICK_RATE_MS);
+    i2c_master_stop(cmd);
+    i2c_cmd_link_delete(cmd);
+    if (ret != ESP_OK) {
+    	ESP_LOGI(TAG, "error in i2c\n");
+        return ret;
+    }
+
+    return ret;
+}
+
+s8 BME280_I2C_bus_write(u8 dev_addr, u8 reg_addr, u8 *reg_data, u8 cnt)
+{
+	s32 iError = BME280_INIT_VALUE;
+
+	esp_err_t espRc;
+	i2c_cmd_handle_t cmd = i2c_cmd_link_create();
+
+	i2c_master_start(cmd);
+	i2c_master_write_byte(cmd, (dev_addr << 1) | I2C_MASTER_WRITE, true);
+
+	i2c_master_write_byte(cmd, reg_addr, true);
+	i2c_master_write(cmd, reg_data, cnt, true);
+	i2c_master_stop(cmd);
+
+	espRc = i2c_master_cmd_begin(I2C_NUM_1, cmd, 10/portTICK_PERIOD_MS);
+	if (espRc == ESP_OK) {
+		iError = SUCCESS;
+	} else {
+		iError = FAIL;
+	}
+	i2c_cmd_link_delete(cmd);
+
+	return (s8)iError;
+}
+
+s8 BME280_I2C_bus_read(u8 dev_addr, u8 reg_addr, u8 *reg_data, u8 cnt)
+{
+	s32 iError = BME280_INIT_VALUE;
+	esp_err_t espRc;
+
+	i2c_cmd_handle_t cmd = i2c_cmd_link_create();
+
+	i2c_master_start(cmd);
+	i2c_master_write_byte(cmd, (dev_addr << 1) | I2C_MASTER_WRITE, true);
+	i2c_master_write_byte(cmd, reg_addr, true);
+
+	i2c_master_start(cmd);
+	i2c_master_write_byte(cmd, (dev_addr << 1) | I2C_MASTER_READ, true);
+
+	if (cnt > 1) {
+		i2c_master_read(cmd, reg_data, cnt-1, ACK_VAL);
+	}
+	i2c_master_read_byte(cmd, reg_data+cnt-1, NACK_VAL);
+	i2c_master_stop(cmd);
+
+	espRc = i2c_master_cmd_begin(I2C_NUM_1, cmd, 10/portTICK_PERIOD_MS);
+	if (espRc == ESP_OK) {
+		iError = SUCCESS;
+	} else {
+		iError = FAIL;
+	}
+
+	i2c_cmd_link_delete(cmd);
+
+	return (s8)iError;
+}
+
+void BME280_delay_msek(u32 msek)
+{
+	vTaskDelay(msek/portTICK_PERIOD_MS);
+}
+
+/*
+const static int CONNECTED_BIT = BIT0;
+
+void connected_cb(void *self, void *params)
+{
+    mqtt_client *client = (mqtt_client *)self;
+    mqtt_subscribe(client, "/test", 0);
+    mqtt_publish(client, "/test", "howdy!", 6, 0, 0);
+}
+void disconnected_cb(void *self, void *params)
+{
+
+}
+void reconnect_cb(void *self, void *params)
+{
+
+}
+void subscribe_cb(void *self, void *params)
+{
+    ESP_LOGI(MQTT_TAG, "[APP] Subscribe ok, test publish msg");
+    mqtt_client *client = (mqtt_client *)self;
+    mqtt_publish(client, "/test", "abcde", 5, 0, 0);
+}
+
+void publish_cb(void *self, void *params)
+{
+
+}
+void data_cb(void *self, void *params)
+{
+    mqtt_client *client = (mqtt_client *)self;
+    mqtt_event_data_t *event_data = (mqtt_event_data_t *)params;
+
+    if(event_data->data_offset == 0) {
+
+        char *topic = malloc(event_data->topic_length + 1);
+        memcpy(topic, event_data->topic, event_data->topic_length);
+        topic[event_data->topic_length] = 0;
+        ESP_LOGI(MQTT_TAG, "[APP] Publish topic: %s", topic);
+        free(topic);
+    }
+
+    // char *data = malloc(event_data->data_length + 1);
+    // memcpy(data, event_data->data, event_data->data_length);
+    // data[event_data->data_length] = 0;
+    ESP_LOGI(MQTT_TAG, "[APP] Publish data[%d/%d bytes]",
+             event_data->data_length + event_data->data_offset,
+             event_data->data_total_length);
+    // data);
+
+    // free(data);
+
+}
+
+mqtt_settings settings = {
+    .host = "test.mosquitto.org",
+#if defined(CONFIG_MQTT_SECURITY_ON)
+    .port = 8883, // encrypted
+#else
+    .port = 1883, // unencrypted
+#endif
+    .client_id = "mqtt_client_id",
+    .username = "user",
+    .password = "pass",
+    .clean_session = 0,
+    .keepalive = 120,
+    .lwt_topic = "/lwt",
+    .lwt_msg = "offline",
+    .lwt_qos = 0,
+    .lwt_retain = 0,
+    .connected_cb = connected_cb,
+    .disconnected_cb = disconnected_cb,
+    .reconnect_cb = reconnect_cb,
+    .subscribe_cb = subscribe_cb,
+    .publish_cb = publish_cb,
+    .data_cb = data_cb
+};
+*/

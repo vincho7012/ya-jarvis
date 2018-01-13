@@ -42,6 +42,7 @@ step3:
 
 #include "udp_perf.h"
 #include "mqtt.h"
+#include "bme280.h"
 
 
 //this task establish a UDP connection and receive data from UDP
@@ -54,26 +55,21 @@ static void udp_conn(void *pvParameters)
     
     /*create udp socket*/
     int socket_ret;
-#if EXAMPLE_ESP_UDP_MODE_SERVER
-    ESP_LOGI(TAG, "create udp server after 3s...");
-    vTaskDelay(3000 / portTICK_RATE_MS);
-    ESP_LOGI(TAG, "create_udp_server.");
-    socket_ret=create_udp_server();
-#else /*EXAMPLE_ESP_UDP_MODE_SERVER*/
     ESP_LOGI(TAG, "create udp client after 5s...");
     vTaskDelay(5000 / portTICK_RATE_MS);
     ESP_LOGI(TAG, "create_udp_client.");
     socket_ret = create_udp_client();
-#endif
+
     if(socket_ret == ESP_FAIL) {
 	ESP_LOGI(TAG, "create udp socket error,stop.");
 	vTaskDelete(NULL);
     }
     
     /*create a task to tx/rx data*/
-    TaskHandle_t tx_task,rx_task;
+    TaskHandle_t tx_task,rx_task,mqtt_task;
     xTaskCreate(&send_data, "send_data", 4096, NULL, 4, &tx_task);
     xTaskCreate(&recv_data, "recv_data", 4096, NULL, 6, &rx_task);
+    xTaskCreate(&mqtt_publish_sensor_data, "mqtt_publish_sensor_data", 4096, NULL, 7, &mqtt_task);
 
     /*waiting udp connected success*/
     xEventGroupWaitBits(udp_event_group, UDP_CONNCETED_SUCCESS,false, true, portMAX_DELAY);
@@ -91,15 +87,14 @@ static void udp_conn(void *pvParameters)
 	    }
 	}
 
-#if EXAMPLE_ESP_UDP_PERF_TX
+
 	ESP_LOGI(TAG, "udp send %d byte per sec! total pack: %d \n", bps, success_pack);
-#else
-	ESP_LOGI(TAG, "udp recv %d byte per sec! total pack: %d \n", bps, success_pack);
-#endif /*EXAMPLE_ESP_UDP_PERF_TX*/
+
     }
     close_socket();
     vTaskDelete(tx_task);
     vTaskDelete(rx_task);
+    vTaskDelete(mqtt_task);
     vTaskDelete(NULL);
 }
 
@@ -114,13 +109,12 @@ void app_main(void)
     }
     ESP_ERROR_CHECK( ret );
 
-#if EXAMPLE_ESP_WIFI_MODE_AP
-    ESP_LOGI(TAG, "EXAMPLE_ESP_WIFI_MODE_AP");
-    wifi_init_softap();
-#else /*EXAMPLE_ESP_WIFI_MODE_AP*/
+
     ESP_LOGI(TAG, "ESP_WIFI_MODE_STA");
     wifi_init_sta();
-#endif
+
     configure_i2s();
+    i2c_example_master_init();
+    //i2c_master_sensor_config(I2C_EXAMPLE_MASTER_NUM);
     xTaskCreate(&udp_conn, "udp_conn", 4096, NULL, 5, NULL);
 }
