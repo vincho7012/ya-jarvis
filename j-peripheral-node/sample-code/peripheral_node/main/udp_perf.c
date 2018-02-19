@@ -7,6 +7,7 @@
    CONDITIONS OF ANY KIND, either express or implied.
 */
 
+#include <stdio.h>
 #include <string.h>
 #include <sys/socket.h>
 #include "freertos/FreeRTOS.h"
@@ -18,9 +19,13 @@
 #include "driver/i2s.h"
 #include "driver/i2c.h"
 
+#include "esp_system.h"
+#include "nvs_flash.h"
+//#include "freertos/semphr.h"
+//#include "freertos/queue.h"
 
+#include <esp_mqtt.h>
 #include "udp_perf.h"
-#include "mqtt.h"
 #include "bme280.h"
 
 
@@ -53,6 +58,7 @@ static esp_err_t event_handler(void *ctx, system_event_t *event)
         esp_wifi_connect();
         break;
     case SYSTEM_EVENT_STA_DISCONNECTED:
+    	esp_mqtt_stop();
         esp_wifi_connect();
         xEventGroupClearBits(udp_event_group, WIFI_CONNECTED_BIT);
         break;
@@ -63,6 +69,7 @@ static esp_err_t event_handler(void *ctx, system_event_t *event)
     	ESP_LOGI(TAG, "got ip:%s\n",
 		ip4addr_ntoa(&event->event_info.got_ip.ip_info.ip));
     	xEventGroupSetBits(udp_event_group, WIFI_CONNECTED_BIT);
+    	esp_mqtt_start(MQTT_HOST, MQTT_PORT, "esp-mqtt", MQTT_USER, MQTT_PASS);
         break;
     default:
         break;
@@ -133,7 +140,7 @@ esp_err_t create_udp_client()
 }
 
 
-//send recv data task
+//send data task
 void send_data(void *pvParameters)
 {
     ESP_LOGI(TAG, "task send_data start!\n");
@@ -159,7 +166,7 @@ void send_data(void *pvParameters)
     } /*if (len > 0)*/
     
     vTaskDelay(500 / portTICK_RATE_MS);
-    i2c_master_sensor_config(I2C_EXAMPLE_MASTER_NUM);
+    //i2c_master_sensor_config(I2C_EXAMPLE_MASTER_NUM);
     ESP_LOGI(TAG, "start count1!\n");
     while(1) {
 
@@ -230,7 +237,8 @@ void mqtt_publish_sensor_data(void *pvParameters)
 			bme280_compensate_temperature_double(v_uncomp_temperature_s32),
 			bme280_compensate_pressure_double(v_uncomp_pressure_s32)/100, // Pa -> hPa
 			bme280_compensate_humidity_double(v_uncomp_humidity_s32));
-
+		char *payload = "hello world";
+		esp_mqtt_publish("test", (void *)payload, (int)strlen(payload), 0, false);
 		vTaskDelay(5000 / portTICK_RATE_MS);//every 5s
 	}
 }
@@ -391,81 +399,4 @@ void BME280_delay_msek(u32 msek)
 	vTaskDelay(msek/portTICK_PERIOD_MS);
 }
 
-/*
-const static int CONNECTED_BIT = BIT0;
 
-void connected_cb(void *self, void *params)
-{
-    mqtt_client *client = (mqtt_client *)self;
-    mqtt_subscribe(client, "/test", 0);
-    mqtt_publish(client, "/test", "howdy!", 6, 0, 0);
-}
-void disconnected_cb(void *self, void *params)
-{
-
-}
-void reconnect_cb(void *self, void *params)
-{
-
-}
-void subscribe_cb(void *self, void *params)
-{
-    ESP_LOGI(MQTT_TAG, "[APP] Subscribe ok, test publish msg");
-    mqtt_client *client = (mqtt_client *)self;
-    mqtt_publish(client, "/test", "abcde", 5, 0, 0);
-}
-
-void publish_cb(void *self, void *params)
-{
-
-}
-void data_cb(void *self, void *params)
-{
-    mqtt_client *client = (mqtt_client *)self;
-    mqtt_event_data_t *event_data = (mqtt_event_data_t *)params;
-
-    if(event_data->data_offset == 0) {
-
-        char *topic = malloc(event_data->topic_length + 1);
-        memcpy(topic, event_data->topic, event_data->topic_length);
-        topic[event_data->topic_length] = 0;
-        ESP_LOGI(MQTT_TAG, "[APP] Publish topic: %s", topic);
-        free(topic);
-    }
-
-    // char *data = malloc(event_data->data_length + 1);
-    // memcpy(data, event_data->data, event_data->data_length);
-    // data[event_data->data_length] = 0;
-    ESP_LOGI(MQTT_TAG, "[APP] Publish data[%d/%d bytes]",
-             event_data->data_length + event_data->data_offset,
-             event_data->data_total_length);
-    // data);
-
-    // free(data);
-
-}
-
-mqtt_settings settings = {
-    .host = "test.mosquitto.org",
-#if defined(CONFIG_MQTT_SECURITY_ON)
-    .port = 8883, // encrypted
-#else
-    .port = 1883, // unencrypted
-#endif
-    .client_id = "mqtt_client_id",
-    .username = "user",
-    .password = "pass",
-    .clean_session = 0,
-    .keepalive = 120,
-    .lwt_topic = "/lwt",
-    .lwt_msg = "offline",
-    .lwt_qos = 0,
-    .lwt_retain = 0,
-    .connected_cb = connected_cb,
-    .disconnected_cb = disconnected_cb,
-    .reconnect_cb = reconnect_cb,
-    .subscribe_cb = subscribe_cb,
-    .publish_cb = publish_cb,
-    .data_cb = data_cb
-};
-*/

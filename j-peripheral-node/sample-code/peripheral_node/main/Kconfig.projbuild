@@ -114,5 +114,29 @@ config UDP_PERF_PKT_SIZE
     default 1460
     help
 	the data send&recv packet size. 
+	
+config MQTT_BROKER
+    string "mqtt broker to connect to"
+    default "broker.shiftr.io"
+    help
+        The hostname of the MQTT Broker to connect to.
+
+config MQTT_PORT
+    int "mqtt broker port"
+    default 1883
+    help
+        The port number to connect to on the MQTT server.
+
+config MQTT_USER
+    string "mqtt broker username"
+    default "try"
+    help
+        The username to authenticate with the MQTT Broker with.
+
+config MQTT_PASS
+    string "mqtt broker passphrase"
+    default "try"
+    help
+The passphrase to authenticate the MQTT username.
 		
 endmenu

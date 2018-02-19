@@ -41,8 +41,8 @@ step3:
 #include "nvs_flash.h"
 
 #include "udp_perf.h"
-#include "mqtt.h"
 #include "bme280.h"
+#include <esp_mqtt.h>
 
 
 //this task establish a UDP connection and receive data from UDP
@@ -98,7 +98,30 @@ static void udp_conn(void *pvParameters)
     vTaskDelete(NULL);
 }
 
+static void
+mqtt_status_cb(esp_mqtt_status_t status)
+{
+    switch (status)
+    {
+    case ESP_MQTT_STATUS_CONNECTED:
 
+        esp_mqtt_subscribe("hello", 0);
+        break;
+    case ESP_MQTT_STATUS_DISCONNECTED:
+        break;
+    }
+}
+
+/* ************************************************************************* *
+ * The MQTT Message callback function. When a message is received, print a
+ * message containing the topic, payload, and the length of the payload to the
+ * terminal.
+ * *************************************************************************/
+static void
+mqtt_message_cb(const char *topic, uint8_t *payload, size_t len)
+{
+    printf("incoming\t%s:%s (%d)\n", topic, payload, (int)len);
+}
 
 void app_main(void)
 {
@@ -115,6 +138,7 @@ void app_main(void)
 
     configure_i2s();
     i2c_example_master_init();
+    esp_mqtt_init(mqtt_status_cb, mqtt_message_cb, 256, 2000);
     //i2c_master_sensor_config(I2C_EXAMPLE_MASTER_NUM);
     xTaskCreate(&udp_conn, "udp_conn", 4096, NULL, 5, NULL);
 }

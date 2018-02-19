@@ -1,0 +1,3 @@
+[submodule "j-peripheral-node/sample-code/peripheral_node/components/esp-mqtt"]
+	path = j-peripheral-node/sample-code/peripheral_node/components/esp-mqtt
+	url = https://github.com/256dpi/esp-mqtt.git

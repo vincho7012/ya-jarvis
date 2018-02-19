@@ -39,6 +39,12 @@ extern "C" {
 #endif /*CONFIG_UDP_PERF_SERVER_IP*/
 
 
+#define MQTT_HOST CONFIG_MQTT_BROKER
+#define MQTT_PORT CONFIG_MQTT_PORT
+#define MQTT_USER CONFIG_MQTT_USER
+#define MQTT_PASS CONFIG_MQTT_PASS
+
+
 #define I2S_NUM         (0)
 #define SAMPLE_RATE     (36000)
 
